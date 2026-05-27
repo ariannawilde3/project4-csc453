@@ -1,0 +1,54 @@
+
+[1m=== bfind Basic Tests ===[0m
+
+[1m--- BFS Traversal ---[0m
+[92m[PASS][0m Lists all entries in a flat directory
+[92m[PASS][0m Finds all entries recursively
+[92m[PASS][0m Output is in BFS order (depths non-decreasing)
+[92m[PASS][0m Defaults to '.' when no path given
+
+[1m--- Filters ---[0m
+[91m[FAIL][0m -name '*.c' matches .c files
+       Got: {'/tmp/tmpxd5f_slo/filt/sub/main.c', '/tmp/tmpxd5f_slo/filt/hello.c', '/tmp/tmpxd5f_slo/filt/empty.c', '/tmp/tmpxd5f_slo/filt/sub', '/tmp/tmpxd5f_slo/filt', '/tmp/tmpxd5f_slo/filt/readme.txt'}
+[91m[FAIL][0m -type f excludes directories
+       Got: {'/tmp/tmpxd5f_slo/filt/sub/main.c', '/tmp/tmpxd5f_slo/filt/hello.c', '/tmp/tmpxd5f_slo/filt/empty.c', '/tmp/tmpxd5f_slo/filt/sub', '/tmp/tmpxd5f_slo/filt', '/tmp/tmpxd5f_slo/filt/readme.txt'}
+[91m[FAIL][0m -type d returns only directories
+       Got: {'/tmp/tmpxd5f_slo/filt/sub/main.c', '/tmp/tmpxd5f_slo/filt/hello.c', '/tmp/tmpxd5f_slo/filt/empty.c', '/tmp/tmpxd5f_slo/filt/sub', '/tmp/tmpxd5f_slo/filt', '/tmp/tmpxd5f_slo/filt/readme.txt'}
+[91m[FAIL][0m -size +1k finds files over 1024 bytes
+       Got: {'/tmp/tmpxd5f_slo/filt/sub/main.c', '/tmp/tmpxd5f_slo/filt/hello.c', '/tmp/tmpxd5f_slo/filt/empty.c', '/tmp/tmpxd5f_slo/filt/sub', '/tmp/tmpxd5f_slo/filt', '/tmp/tmpxd5f_slo/filt/readme.txt'}
+[91m[FAIL][0m -size 0c finds empty files
+       Got: {'/tmp/tmpxd5f_slo/filt/sub/main.c', '/tmp/tmpxd5f_slo/filt/hello.c', '/tmp/tmpxd5f_slo/filt/empty.c', '/tmp/tmpxd5f_slo/filt/sub', '/tmp/tmpxd5f_slo/filt', '/tmp/tmpxd5f_slo/filt/readme.txt'}
+[91m[FAIL][0m -name '*.c' -size +100c (AND semantics)
+       Got: {'/tmp/tmpxd5f_slo/filt/sub/main.c', '/tmp/tmpxd5f_slo/filt/hello.c', '/tmp/tmpxd5f_slo/filt/empty.c', '/tmp/tmpxd5f_slo/filt/sub', '/tmp/tmpxd5f_slo/filt', '/tmp/tmpxd5f_slo/filt/readme.txt'}
+
+[1m--- Symlinks ---[0m
+[92m[PASS][0m Without -L: symlink listed but not followed
+[91m[FAIL][0m With -L: symlink followed AND real dir still descended
+       link children: False, real children: True
+[92m[PASS][0m With -L: cycle detection prevents infinite loop
+
+[1m--- -links filter ---[0m
+[91m[FAIL][0m -links 1 finds only files with one hard link
+       Got: {'/tmp/tmpxd5f_slo/links/linked.txt', '/tmp/tmpxd5f_slo/links', '/tmp/tmpxd5f_slo/links/original.txt', '/tmp/tmpxd5f_slo/links/solo.txt'}
+[91m[FAIL][0m -links 2 finds both entries sharing the same inode
+       Got: {'/tmp/tmpxd5f_slo/links/linked.txt', '/tmp/tmpxd5f_slo/links', '/tmp/tmpxd5f_slo/links/original.txt', '/tmp/tmpxd5f_slo/links/solo.txt'}
+
+[1m--- -samefile filter ---[0m
+[91m[FAIL][0m -samefile finds the reference file and its hard links
+       Got: {'/tmp/tmpxd5f_slo/samefile', '/tmp/tmpxd5f_slo/samefile/other.txt', '/tmp/tmpxd5f_slo/samefile/linked.txt', '/tmp/tmpxd5f_slo/samefile/original.txt'}
+[91m[FAIL][0m -samefile with no hard links finds only the file itself
+       Got: {'/tmp/tmpxd5f_slo/samefile', '/tmp/tmpxd5f_slo/samefile/other.txt', '/tmp/tmpxd5f_slo/samefile/linked.txt', '/tmp/tmpxd5f_slo/samefile/original.txt'}
+[91m[FAIL][0m -samefile: symlink to target does not match without -L
+       Got: {'/tmp/tmpxd5f_slo/samefile/other.txt', '/tmp/tmpxd5f_slo/samefile/linked.txt', '/tmp/tmpxd5f_slo/samefile/original.txt', '/tmp/tmpxd5f_slo/samefile/sym_to_original', '/tmp/tmpxd5f_slo/samefile'}
+
+[1m--- Error Handling ---[0m
+[92m[PASS][0m Nonexistent path: prints error, doesn't crash
+
+[1m=== Results ===[0m
+  [92mPassed: 7/19[0m
+  [91mFailed: 12/19[0m
+
+  Note: This is not the full test suite. Passing all of
+  these does not guarantee full scores. Test edge cases
+  manually and compare against the system 'find' command.
+

@@ -357,7 +357,7 @@ static void bfs_traverse(char **start_paths, int npaths) {
 
     while(!queue_is_empty(&queue)) {
 
-        char *path = (char*)queue_dequeue(&q);
+        char *path = (char*)queue_dequeue(&queue);
 
         struct stat sb;
         if(lstat(path, &sb) < 0) {
@@ -366,7 +366,7 @@ static void bfs_traverse(char **start_paths, int npaths) {
             continue;
         }
 
-        print("%s\n", path);
+        printf("%s\n", path);
 
         if(!S_ISDIR(sb.st_mode)) {
             free(path);

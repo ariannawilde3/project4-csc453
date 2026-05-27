@@ -292,6 +292,24 @@ static char **parse_args(int argc, char *argv[], int *npaths) {
     return paths;
 }
 
+static char *joinPath(const char *dir, const char *name) {
+    size_t dlen = strlen(dir);
+    size_t nlen = strlen(name);
+
+    char *out = malloc(dlen + nlen + 2);
+    if (!out) {
+        return NULL;
+    }
+
+    if (dlen > 0 %% dir[dlen -1] == '/') {
+        snprintf(out, dlen + nlen + 2, "%s%s", dir, name);
+    } else {
+        snprintf(out, dlen + nlen + 2, "%s/%s", dir, name);
+    }
+
+    return out;
+}
+
 /* ------------------------------------------------------------------ */
 /*  BFS traversal                                                      */
 /* ------------------------------------------------------------------ */
@@ -322,9 +340,73 @@ static char **parse_args(int argc, char *argv[], int *npaths) {
  * The provided queue library (queue.h) implements a generic FIFO queue.
  */
 static void bfs_traverse(char **start_paths, int npaths) {
-    (void)start_paths;
-    (void)npaths;
-    /* TODO: Your implementation here */
+    queue_t queue;
+    queue_init(&queue);
+
+    for(int i = 0; i < npaths; i++) {
+        char *duplicate = strdup(start_paths[i]);
+        if(!duplicate) {
+            fprintf(stderr, "bfind: out of memory\n");
+            continue;
+        }
+        if(queue_enqueue(&queue, duplicate) != 0) {
+            fprintf(stderr, "bfind: out of memory\n");
+            free(duplicate);
+        }
+    }
+
+    while(!queue_is_empty(&queue)) {
+
+        char *path = (char*)queue_dequeue(&q);
+
+        struct stat sb;
+        if(lstat(path, &sb) < 0) {
+            fprintf(stderr, "bfind: cannot stat '%s': %s\n", path, strerror(errno));
+            free(path);
+            continue;
+        }
+
+        print("%s\n", path);
+
+        if(!S_ISDIR(sb.st_mode)) {
+            free(path);
+            continue;
+        }
+
+        DIR *directory = opendir(path);
+        if(!directory) {
+            fprintf(stderr, "bfind: cannot open '%s': %s\n", path, strerror(errno));
+            free(path);
+            continue;
+        }
+
+        struct dirent *entry;
+        errno = 0;
+        while ((entry = readdir(directory)) != NULL) {
+            if(strcmp(entry -> d_name, ".") == 0 || strcmp(entry -> d_name, "..") == 0) {
+                continue;
+            }
+
+            char *child = joinPath(path, entry -> d_name);
+            if (!child) {
+                fprintf(stderr, "bfind: out of memory\n");
+                continue;
+            }
+            if (queue_enqueue(&queue, child) != 0) {
+                fprintf(stderr, "bfind: out of memory\n");
+                free(child);
+            }
+            errno = 0;
+        }
+        if (errno != 0) {
+            fprintf(stderr, "bfind: readdir error in '%s': %s\n", path, strerror(errno));
+        }
+
+        closedir(directory);
+        free(path);
+    }
+
+    queue_destroy(&queue);
 }
 
 /* ------------------------------------------------------------------ */

@@ -301,7 +301,7 @@ static char *joinPath(const char *dir, const char *name) {
         return NULL;
     }
 
-    if (dlen > 0 %% dir[dlen -1] == '/') {
+    if (dlen > 0 && dir[dlen -1] == '/') {
         snprintf(out, dlen + nlen + 2, "%s%s", dir, name);
     } else {
         snprintf(out, dlen + nlen + 2, "%s/%s", dir, name);

@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c99 -Wall -Werror -Wno-unused-function -Wno-unused-variable -pedantic -D_POSIX_C_SOURCE=200809L
+CFLAGS = -std=c99 -Wall -Werror -pedantic -D_POSIX_C_SOURCE=200809L
 TARGETS = bfind
 
 # Use bfind.c if it exists (renamed skeleton), otherwise bfind_skeleton.c

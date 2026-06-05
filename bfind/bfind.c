@@ -44,6 +44,52 @@ typedef struct {
     ino_t ino;
 } dev_ino_t;
 
+typedef struct {
+    dev_ino_t *items;
+    size_t size;
+    size_t capacity;
+} visited_set_t;
+
+static void visited_set_init(visited_set_t *set) {
+    set->items = NULL;
+    set->size = 0;
+    set->capacity = 0;
+}
+
+static void visited_set_destroy(visited_set_t *set) {
+    free(set->items);
+    set->items = NULL;
+    set->size = 0;
+    set->capacity = 0;
+}
+
+static bool visited_set_contains(const visited_set_t *set, dev_ino_t item) {
+    for (size_t i = 0; i < set->size; i++) {
+        if (set->items[i].dev == item.dev && set->items[i].ino == item.ino) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int visited_set_add(visited_set_t *set, dev_ino_t item) {
+    if (visited_set_contains(set, item)) {
+        return 0;
+    }
+    if (set->size == set->capacity) {
+        size_t new_capacity = set->capacity ? set->capacity * 2 : 16;
+        dev_ino_t *new_items = realloc(set->items,
+                                       new_capacity * sizeof(dev_ino_t));
+        if (!new_items) {
+            return -1;
+        }
+        set->items = new_items;
+        set->capacity = new_capacity;
+    }
+    set->items[set->size++] = item;
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Filter definitions                                                 */
 /* ------------------------------------------------------------------ */
@@ -101,28 +147,46 @@ static const char *basename_of(const char *path) {
     return slash ? slash + 1 : path;
 }
 
-/*
- * TODO 1: Implement this function.
- *
- * Return true if the single filter 'f' matches the file at 'path' with
- * metadata 'sb'. Use a switch on f->kind and handle all seven cases:
- *
- *   FILTER_NAME     - fnmatch on basename_of(path)
- *   FILTER_TYPE     - S_ISREG / S_ISDIR / S_ISLNK on sb->st_mode
- *   FILTER_MTIME    - age in days vs f->filter.mtime_days
- *   FILTER_SIZE     - sb->st_size vs f->filter.size (with size_cmp_t)
- *   FILTER_PERM     - (sb->st_mode & 07777) vs f->filter.perm_mode
- *   FILTER_LINKS    - sb->st_nlink vs f->filter.nlinks
- *   FILTER_SAMEFILE - sb->st_dev + sb->st_ino vs f->filter.samefile
- *
- * Relevant man pages: fnmatch(3), stat(2).
- */
 static bool filter_matches(const filter_t *f, const char *path,
                            const struct stat *sb) {
-    (void)f;
-    (void)path;
-    (void)sb;
-    /* TODO: Your implementation here */
+    switch (f->kind) {
+    case FILTER_NAME:
+        return fnmatch(f->filter.pattern, basename_of(path), 0) == 0;
+
+    case FILTER_TYPE:
+        switch (f->filter.type_char) {
+        case 'f': return S_ISREG(sb->st_mode);
+        case 'd': return S_ISDIR(sb->st_mode);
+        case 'l': return S_ISLNK(sb->st_mode);
+        default: return false;
+        }
+
+    case FILTER_MTIME:
+        return difftime(g_now, sb->st_mtime) / 86400 <=
+               f->filter.mtime_days;
+
+    case FILTER_SIZE:
+        switch (f->filter.size.size_cmp) {
+        case SIZE_CMP_EXACT:
+            return sb->st_size == f->filter.size.size_bytes;
+        case SIZE_CMP_GREATER:
+            return sb->st_size > f->filter.size.size_bytes;
+        case SIZE_CMP_LESS:
+            return sb->st_size < f->filter.size.size_bytes;
+        }
+        return false;
+
+    case FILTER_PERM:
+        return (sb->st_mode & 07777) == f->filter.perm_mode;
+
+    case FILTER_LINKS:
+        return sb->st_nlink == f->filter.nlinks;
+
+    case FILTER_SAMEFILE:
+        return sb->st_dev == f->filter.samefile.dev &&
+               sb->st_ino == f->filter.samefile.ino;
+    }
+
     return false;
 }
 
@@ -310,38 +374,33 @@ static char *joinPath(const char *dir, const char *name) {
     return out;
 }
 
+static int stat_for_traversal(const char *path, struct stat *sb) {
+    return g_follow_links ? stat(path, sb) : lstat(path, sb);
+}
+
 /* ------------------------------------------------------------------ */
 /*  BFS traversal                                                      */
 /* ------------------------------------------------------------------ */
 
 /*
- * TODO 2: Implement this function.
- *
  * Traverse the filesystem breadth-first starting from the given paths.
  * For each entry, check the filters and print matching paths to stdout.
- *
- * You must handle:
- *   - The -L flag: controls whether symlinks are followed. Think about
- *     when to use stat(2) vs lstat(2) and what that means for descending
- *     into directories.
- *   - The -xdev flag: do not descend into directories on a different
- *     filesystem than the starting path (compare st_dev values).
- *   - Cycle detection (only relevant with -L): a symlink can point back
- *     to an ancestor directory, creating an infinite loop. Only symlinks
- *     can create cycles — the OS forbids hard links to directories.
- *     Track visited (st_dev, st_ino) pairs using the dev_ino_t type.
- *     Important: record symlinks in the visited set, NOT real directories.
- *     Recording real directories would incorrectly block legitimate symlinks
- *     to non-ancestor directories depending on BFS traversal order. Real
- *     directories should always be descended into unconditionally.
- *   - Errors: if stat or opendir fails, print a message to stderr
- *     and continue traversing. Do not exit.
- *
- * The provided queue library (queue.h) implements a generic FIFO queue.
  */
 static void bfs_traverse(char **start_paths, int npaths) {
     queue_t queue;
+    visited_set_t visited;
+    bool xdev_active = false;
+
     queue_init(&queue);
+    visited_set_init(&visited);
+
+    if (g_xdev && npaths > 0) {
+        struct stat start_sb;
+        if (stat_for_traversal(start_paths[0], &start_sb) == 0) {
+            g_start_dev = start_sb.st_dev;
+            xdev_active = true;
+        }
+    }
 
     for(int i = 0; i < npaths; i++) {
         char *duplicate = strdup(start_paths[i]);
@@ -360,13 +419,41 @@ static void bfs_traverse(char **start_paths, int npaths) {
         char *path = (char*)queue_dequeue(&queue);
 
         struct stat sb;
-        if(lstat(path, &sb) < 0) {
+        if(stat_for_traversal(path, &sb) < 0) {
             fprintf(stderr, "bfind: cannot stat '%s': %s\n", path, strerror(errno));
             free(path);
             continue;
         }
 
-        printf("%s\n", path);
+        if (g_follow_links && S_ISDIR(sb.st_mode)) {
+            struct stat link_sb;
+            if (lstat(path, &link_sb) < 0) {
+                fprintf(stderr, "bfind: cannot stat '%s': %s\n", path, strerror(errno));
+                free(path);
+                continue;
+            }
+            if (S_ISLNK(link_sb.st_mode)) {
+                dev_ino_t target_id = { sb.st_dev, sb.st_ino };
+                if (visited_set_contains(&visited, target_id)) {
+                    free(path);
+                    continue;
+                }
+                if (visited_set_add(&visited, target_id) != 0) {
+                    fprintf(stderr, "bfind: out of memory\n");
+                    free(path);
+                    continue;
+                }
+            }
+        }
+
+        if (xdev_active && sb.st_dev != g_start_dev) {
+            free(path);
+            continue;
+        }
+
+        if (matches_all_filters(path, &sb)) {
+            printf("%s\n", path);
+        }
 
         if(!S_ISDIR(sb.st_mode)) {
             free(path);
@@ -407,6 +494,7 @@ static void bfs_traverse(char **start_paths, int npaths) {
     }
 
     queue_destroy(&queue);
+    visited_set_destroy(&visited);
 }
 
 /* ------------------------------------------------------------------ */
